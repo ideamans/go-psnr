@@ -1,3 +1,3 @@
-module github.com/ideamans/go-fast-psnr
+module github.com/ideamans/go-psnr
 
 go 1.22.2

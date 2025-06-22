@@ -5,7 +5,7 @@ import (
 	"log"
 	"os"
 
-	psnr "github.com/ideamans/go-fast-psnr"
+	psnr "github.com/ideamans/go-psnr"
 )
 
 func main() {

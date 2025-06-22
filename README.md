@@ -1,9 +1,9 @@
-# go-fast-psnr
+# go-psnr
 
 Fast PSNR (Peak Signal-to-Noise Ratio) calculation for images in pure Go.
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/ideamans/go-fast-psnr.svg)](https://pkg.go.dev/github.com/ideamans/go-fast-psnr)
-[![CI](https://github.com/ideamans/go-fast-psnr/actions/workflows/ci.yml/badge.svg)](https://github.com/ideamans/go-fast-psnr/actions/workflows/ci.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/ideamans/go-psnr.svg)](https://pkg.go.dev/github.com/ideamans/go-psnr)
+[![CI](https://github.com/ideamans/go-psnr/actions/workflows/ci.yml/badge.svg)](https://github.com/ideamans/go-psnr/actions/workflows/ci.yml)
 
 ## Features
 
@@ -16,7 +16,7 @@ Fast PSNR (Peak Signal-to-Noise Ratio) calculation for images in pure Go.
 ## Installation
 
 ```bash
-go get github.com/ideamans/go-fast-psnr
+go get github.com/ideamans/go-psnr
 ```
 
 ## Usage
@@ -29,7 +29,7 @@ package main
 import (
     "fmt"
     "log"
-    "github.com/ideamans/go-fast-psnr/psnr"
+    "github.com/ideamans/go-psnr/psnr"
 )
 
 func main() {
@@ -56,7 +56,6 @@ if err != nil {
 }
 fmt.Printf("PSNR: %.2f dB\n", value)
 ```
-
 
 ## Performance
 
