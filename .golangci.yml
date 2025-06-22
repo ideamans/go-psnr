@@ -1,7 +1,7 @@
 linters:
   enable:
     - gofmt
-    - golint
+    - revive
     - govet
     - ineffassign
     - misspell
@@ -10,8 +10,10 @@ linters:
     - goimports
 
 linters-settings:
-  govet:
-    check-shadowing: true
+  revive:
+    rules:
+      - name: package-comments
+        disabled: true
 
 issues:
   exclude-rules:
