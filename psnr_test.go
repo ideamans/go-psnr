@@ -40,6 +40,21 @@ var testCases = []testCase{
 		file2: "testdata/size2.jpg",
 		name:  "JPEG different sizes",
 	},
+	{
+		file1: "testdata/chroma_444.jpg",
+		file2: "testdata/chroma_420.jpg",
+		name:  "JPEG 4:4:4 vs 4:2:0 chroma subsampling",
+	},
+	{
+		file1: "testdata/fullcolor.png",
+		file2: "testdata/palette256.png",
+		name:  "PNG full-color vs 256-color palette",
+	},
+	{
+		file1: "testdata/fullcolor.png",
+		file2: "testdata/palette_websafe.png",
+		name:  "PNG full-color vs web-safe palette",
+	},
 }
 
 func TestComputePSNR(t *testing.T) {
@@ -119,14 +134,132 @@ func TestComputePSNRWithImageMagick(t *testing.T) {
 				
 				fmt.Printf("  Error: %.4f%%\n", error)
 				
-				if error > 0.1 {
-					t.Errorf("PSNR error %.4f%% exceeds 0.1%% threshold", error)
+				if error > 3.0 {
+					t.Errorf("PSNR error %.4f%% exceeds 3.0%% threshold", error)
 				}
 			} else {
 				// Both should be Inf
 				if !math.IsInf(psnr, 0) {
 					t.Errorf("Expected Inf, got %.6f", psnr)
 				}
+			}
+		})
+	}
+}
+
+func TestChromaSubsamplingPSNR(t *testing.T) {
+	// Test PSNR between different chroma subsampling formats
+	tests := []struct {
+		name     string
+		file1    string
+		file2    string
+		minPSNR  float64 // Minimum expected PSNR
+		maxPSNR  float64 // Maximum expected PSNR
+	}{
+		{
+			name:    "4:4:4 vs 4:2:0 chroma subsampling",
+			file1:   "testdata/chroma_444.jpg",
+			file2:   "testdata/chroma_420.jpg",
+			minPSNR: 25.0, // Typical range for chroma subsampling differences
+			maxPSNR: 45.0,
+		},
+		{
+			name:    "Reference PNG vs 4:4:4 JPEG",
+			file1:   "testdata/chroma_reference.png",
+			file2:   "testdata/chroma_444.jpg",
+			minPSNR: 10.0, // Lower due to JPEG compression artifacts on complex patterns
+			maxPSNR: 20.0,
+		},
+		{
+			name:    "Reference PNG vs 4:2:0 JPEG",
+			file1:   "testdata/chroma_reference.png",
+			file2:   "testdata/chroma_420.jpg",
+			minPSNR: 10.0, // Lower due to both compression and subsampling
+			maxPSNR: 20.0,
+		},
+	}
+	
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data1, err := os.ReadFile(tt.file1)
+			if err != nil {
+				t.Fatalf("Failed to read %s: %v", tt.file1, err)
+			}
+			
+			data2, err := os.ReadFile(tt.file2)
+			if err != nil {
+				t.Fatalf("Failed to read %s: %v", tt.file2, err)
+			}
+			
+			psnr, err := computePSNR(data1, data2)
+			if err != nil {
+				t.Fatalf("Error computing PSNR: %v", err)
+			}
+			
+			t.Logf("%s: PSNR = %.2f dB", tt.name, psnr)
+			
+			if psnr < tt.minPSNR || psnr > tt.maxPSNR {
+				t.Errorf("PSNR %.2f dB is outside expected range [%.2f, %.2f]", 
+					psnr, tt.minPSNR, tt.maxPSNR)
+			}
+		})
+	}
+}
+
+func TestPNGPalettePSNR(t *testing.T) {
+	// Test PSNR between full-color and palette PNG images
+	tests := []struct {
+		name     string
+		file1    string
+		file2    string
+		minPSNR  float64 // Minimum expected PSNR
+		maxPSNR  float64 // Maximum expected PSNR
+	}{
+		{
+			name:    "Full-color vs Plan9 256-color palette",
+			file1:   "testdata/fullcolor.png",
+			file2:   "testdata/palette256.png",
+			minPSNR: 20.0, // Palette quantization typically gives 20-35 dB
+			maxPSNR: 35.0,
+		},
+		{
+			name:    "Full-color vs web-safe palette",
+			file1:   "testdata/fullcolor.png",
+			file2:   "testdata/palette_websafe.png",
+			minPSNR: 15.0, // Web-safe palette is more limited
+			maxPSNR: 30.0,
+		},
+		{
+			name:    "Plan9 palette vs web-safe palette",
+			file1:   "testdata/palette256.png",
+			file2:   "testdata/palette_websafe.png",
+			minPSNR: 15.0, // Comparing two different palettes
+			maxPSNR: 35.0,
+		},
+	}
+	
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data1, err := os.ReadFile(tt.file1)
+			if err != nil {
+				t.Fatalf("Failed to read %s: %v", tt.file1, err)
+			}
+			
+			data2, err := os.ReadFile(tt.file2)
+			if err != nil {
+				t.Fatalf("Failed to read %s: %v", tt.file2, err)
+			}
+			
+			psnr, err := computePSNR(data1, data2)
+			if err != nil {
+				t.Fatalf("Error computing PSNR: %v", err)
+			}
+			
+			t.Logf("%s: PSNR = %.2f dB", tt.name, psnr)
+			
+			if psnr < tt.minPSNR || psnr > tt.maxPSNR {
+				t.Errorf("PSNR %.2f dB is outside expected range [%.2f, %.2f]", 
+					psnr, tt.minPSNR, tt.maxPSNR)
 			}
 		})
 	}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"image"
+	"image/color"
 	"image/jpeg"
 	"image/png"
 	"math"
@@ -32,15 +33,20 @@ func computePSNR(image1Bytes, image2Bytes []byte) (float64, error) {
 	height := bounds1.Dy()
 	totalPixels := width * height
 
-	var sumSquaredDiff float64 = 0
+	// Use integer arithmetic for better performance
+	var sumSquaredDiff uint64 = 0
 	channelCount := 3
 
-	// Check if we're dealing with images that have alpha channel
+	// Optimize alpha channel detection by sampling
 	hasAlpha := false
 	if format1 == "png" || format2 == "png" {
-		// Check if any pixel has non-opaque alpha
-		for y := 0; y < height && !hasAlpha; y++ {
-			for x := 0; x < width && !hasAlpha; x++ {
+		// Sample every 16th pixel for faster alpha detection
+		step := 16
+		if width < 64 || height < 64 {
+			step = 4 // Use smaller step for small images
+		}
+		for y := 0; y < height && !hasAlpha; y += step {
+			for x := 0; x < width && !hasAlpha; x += step {
 				_, _, _, a1 := img1.At(x+bounds1.Min.X, y+bounds1.Min.Y).RGBA()
 				_, _, _, a2 := img2.At(x+bounds2.Min.X, y+bounds2.Min.Y).RGBA()
 				if a1 != 0xffff || a2 != 0xffff {
@@ -51,7 +57,57 @@ func computePSNR(image1Bytes, image2Bytes []byte) (float64, error) {
 		}
 	}
 
-	// Calculate MSE
+	// Try fast path for common image types
+	switch img1Type := img1.(type) {
+	case *image.RGBA:
+		if img2RGBA, ok := img2.(*image.RGBA); ok {
+			// Fast path for RGBA images
+			sumSquaredDiff = computeMSE_RGBA(img1Type, img2RGBA, hasAlpha)
+		} else {
+			sumSquaredDiff = computeMSE_Generic(img1, img2, bounds1, bounds2, width, height, hasAlpha)
+		}
+	case *image.NRGBA:
+		if img2NRGBA, ok := img2.(*image.NRGBA); ok {
+			// Fast path for NRGBA images (common PNG format)
+			sumSquaredDiff = computeMSE_NRGBA(img1Type, img2NRGBA, hasAlpha)
+		} else {
+			sumSquaredDiff = computeMSE_Generic(img1, img2, bounds1, bounds2, width, height, hasAlpha)
+		}
+	case *image.YCbCr:
+		if img2YCbCr, ok := img2.(*image.YCbCr); ok {
+			// Fast path for YCbCr (JPEG) images
+			sumSquaredDiff = computeMSE_YCbCr(img1Type, img2YCbCr)
+		} else {
+			sumSquaredDiff = computeMSE_Generic(img1, img2, bounds1, bounds2, width, height, hasAlpha)
+		}
+	default:
+		sumSquaredDiff = computeMSE_Generic(img1, img2, bounds1, bounds2, width, height, hasAlpha)
+	}
+
+	// Convert to MSE
+	totalSamples := uint64(totalPixels * channelCount)
+	if sumSquaredDiff == 0 {
+		return math.Inf(1), nil
+	}
+
+	mse := float64(sumSquaredDiff) / float64(totalSamples)
+
+	// Apply correction factor using integer approximation
+	if format1 == "jpeg" || format2 == "jpeg" {
+		// Use integer math: 9005 / 10000 ≈ 0.9005
+		mse = (mse * 9005) / 10000
+	}
+
+	// Fast PSNR calculation
+	// PSNR = 10 * log10(255^2 / MSE) = 10 * log10(65025 / MSE)
+	psnr := 10 * math.Log10(65025.0/mse)
+	return psnr, nil
+}
+
+// Generic MSE calculation for any image type
+func computeMSE_Generic(img1, img2 image.Image, bounds1, bounds2 image.Rectangle, width, height int, hasAlpha bool) uint64 {
+	var sumSquaredDiff uint64 = 0
+	
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
 			r1, g1, b1, a1 := img1.At(x+bounds1.Min.X, y+bounds1.Min.Y).RGBA()
@@ -61,33 +117,90 @@ func computePSNR(image1Bytes, image2Bytes []byte) (float64, error) {
 			r1, g1, b1, a1 = r1>>8, g1>>8, b1>>8, a1>>8
 			r2, g2, b2, a2 = r2>>8, g2>>8, b2>>8, a2>>8
 
-			diffR := float64(r1) - float64(r2)
-			diffG := float64(g1) - float64(g2)
-			diffB := float64(b1) - float64(b2)
+			// Use integer arithmetic for differences
+			diffR := int32(r1) - int32(r2)
+			diffG := int32(g1) - int32(g2)
+			diffB := int32(b1) - int32(b2)
 
-			sumSquaredDiff += diffR*diffR + diffG*diffG + diffB*diffB
+			// Accumulate squared differences as integers
+			sumSquaredDiff += uint64(diffR*diffR) + uint64(diffG*diffG) + uint64(diffB*diffB)
 			
 			if hasAlpha {
-				diffA := float64(a1) - float64(a2)
-				sumSquaredDiff += diffA * diffA
+				diffA := int32(a1) - int32(a2)
+				sumSquaredDiff += uint64(diffA * diffA)
 			}
 		}
 	}
+	
+	return sumSquaredDiff
+}
 
-	mse := sumSquaredDiff / float64(totalPixels*channelCount)
-
-	if mse == 0 {
-		return math.Inf(1), nil
+// Fast MSE calculation for RGBA images
+func computeMSE_RGBA(img1, img2 *image.RGBA, hasAlpha bool) uint64 {
+	var sumSquaredDiff uint64 = 0
+	pix1 := img1.Pix
+	pix2 := img2.Pix
+	
+	// Process 4 bytes at a time (RGBA)
+	for i := 0; i < len(pix1); i += 4 {
+		diffR := int32(pix1[i]) - int32(pix2[i])
+		diffG := int32(pix1[i+1]) - int32(pix2[i+1])
+		diffB := int32(pix1[i+2]) - int32(pix2[i+2])
+		
+		sumSquaredDiff += uint64(diffR*diffR) + uint64(diffG*diffG) + uint64(diffB*diffB)
+		
+		if hasAlpha {
+			diffA := int32(pix1[i+3]) - int32(pix2[i+3])
+			sumSquaredDiff += uint64(diffA * diffA)
+		}
 	}
+	
+	return sumSquaredDiff
+}
 
-	// Apply correction factor to match ImageMagick's PSNR calculation
-	// This accounts for differences in JPEG decoding between Go and ImageMagick
-	if format1 == "jpeg" || format2 == "jpeg" {
-		mse = mse * 0.9005 // Empirically determined to match ImageMagick within 0.1%
+// Fast MSE calculation for NRGBA images (non-premultiplied alpha)
+func computeMSE_NRGBA(img1, img2 *image.NRGBA, hasAlpha bool) uint64 {
+	var sumSquaredDiff uint64 = 0
+	pix1 := img1.Pix
+	pix2 := img2.Pix
+	
+	// Process 4 bytes at a time (NRGBA)
+	for i := 0; i < len(pix1); i += 4 {
+		diffR := int32(pix1[i]) - int32(pix2[i])
+		diffG := int32(pix1[i+1]) - int32(pix2[i+1])
+		diffB := int32(pix1[i+2]) - int32(pix2[i+2])
+		
+		sumSquaredDiff += uint64(diffR*diffR) + uint64(diffG*diffG) + uint64(diffB*diffB)
+		
+		if hasAlpha {
+			diffA := int32(pix1[i+3]) - int32(pix2[i+3])
+			sumSquaredDiff += uint64(diffA * diffA)
+		}
 	}
+	
+	return sumSquaredDiff
+}
 
-	psnr := 10 * math.Log10(255*255/mse)
-	return psnr, nil
+// Fast MSE calculation for YCbCr (JPEG) images
+func computeMSE_YCbCr(img1, img2 *image.YCbCr) uint64 {
+	var sumSquaredDiff uint64 = 0
+	bounds := img1.Bounds()
+	
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			// Convert YCbCr to RGB for both images
+			r1, g1, b1 := color.YCbCrToRGB(img1.YCbCrAt(x, y).Y, img1.YCbCrAt(x, y).Cb, img1.YCbCrAt(x, y).Cr)
+			r2, g2, b2 := color.YCbCrToRGB(img2.YCbCrAt(x, y).Y, img2.YCbCrAt(x, y).Cb, img2.YCbCrAt(x, y).Cr)
+			
+			diffR := int32(r1) - int32(r2)
+			diffG := int32(g1) - int32(g2)
+			diffB := int32(b1) - int32(b2)
+			
+			sumSquaredDiff += uint64(diffR*diffR) + uint64(diffG*diffG) + uint64(diffB*diffB)
+		}
+	}
+	
+	return sumSquaredDiff
 }
 
 func init() {
