@@ -1,4 +1,4 @@
-package main
+package psnr
 
 import (
 	"fmt"
@@ -75,8 +75,8 @@ func TestComputePSNR(t *testing.T) {
 				t.Fatalf("Failed to read %s: %v", tc.file2, err)
 			}
 
-			psnr, err := computePSNR(data1, data2)
-			
+			psnr, err := Compute(data1, data2)
+
 			if tc.file1 == tc.file2 {
 				if err != nil {
 					t.Fatalf("Error computing PSNR for identical images: %v", err)
@@ -126,21 +126,22 @@ func TestComputePSNRWithImageMagick(t *testing.T) {
 				t.Fatalf("Failed to read %s: %v", tc.file2, err)
 			}
 
-			psnr, err := computePSNR(data1, data2)
+			psnr, err := Compute(data1, data2)
 			if err != nil {
 				t.Fatalf("Error computing PSNR: %v", err)
 			}
 
 			fmt.Printf("%s: PSNR = %.6f dB (ImageMagick: %.6f dB)\n", tc.name, psnr, tc.expected)
-			
+
 			// Check if within 0.1% of ImageMagick
 			if !math.IsInf(tc.expected, 0) {
 				error := math.Abs(psnr-tc.expected) / tc.expected * 100
-				
+
 				fmt.Printf("  Error: %.4f%%\n", error)
-				
-				if error > 3.0 {
-					t.Errorf("PSNR error %.4f%% exceeds 3.0%% threshold", error)
+
+				// Allow up to 2% difference due to JPEG decoder implementation differences
+				if error > 2.0 {
+					t.Errorf("PSNR error %.4f%% exceeds 2.0%% threshold", error)
 				}
 			} else {
 				// Both should be Inf
@@ -155,11 +156,11 @@ func TestComputePSNRWithImageMagick(t *testing.T) {
 func TestChromaSubsamplingPSNR(t *testing.T) {
 	// Test PSNR between different chroma subsampling formats
 	tests := []struct {
-		name     string
-		file1    string
-		file2    string
-		minPSNR  float64 // Minimum expected PSNR
-		maxPSNR  float64 // Maximum expected PSNR
+		name    string
+		file1   string
+		file2   string
+		minPSNR float64 // Minimum expected PSNR
+		maxPSNR float64 // Maximum expected PSNR
 	}{
 		{
 			name:    "4:4:4 vs 4:2:0 chroma subsampling",
@@ -183,28 +184,28 @@ func TestChromaSubsamplingPSNR(t *testing.T) {
 			maxPSNR: 20.0,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			data1, err := os.ReadFile(tt.file1)
 			if err != nil {
 				t.Fatalf("Failed to read %s: %v", tt.file1, err)
 			}
-			
+
 			data2, err := os.ReadFile(tt.file2)
 			if err != nil {
 				t.Fatalf("Failed to read %s: %v", tt.file2, err)
 			}
-			
-			psnr, err := computePSNR(data1, data2)
+
+			psnr, err := Compute(data1, data2)
 			if err != nil {
 				t.Fatalf("Error computing PSNR: %v", err)
 			}
-			
+
 			t.Logf("%s: PSNR = %.2f dB", tt.name, psnr)
-			
+
 			if psnr < tt.minPSNR || psnr > tt.maxPSNR {
-				t.Errorf("PSNR %.2f dB is outside expected range [%.2f, %.2f]", 
+				t.Errorf("PSNR %.2f dB is outside expected range [%.2f, %.2f]",
 					psnr, tt.minPSNR, tt.maxPSNR)
 			}
 		})
@@ -214,11 +215,11 @@ func TestChromaSubsamplingPSNR(t *testing.T) {
 func TestPNGvsJPEGPSNR(t *testing.T) {
 	// Test PSNR between PNG and JPEG formats
 	tests := []struct {
-		name     string
-		file1    string
-		file2    string
-		minPSNR  float64 // Minimum expected PSNR
-		maxPSNR  float64 // Maximum expected PSNR
+		name    string
+		file1   string
+		file2   string
+		minPSNR float64 // Minimum expected PSNR
+		maxPSNR float64 // Maximum expected PSNR
 	}{
 		{
 			name:    "PNG vs JPEG quality 100",
@@ -256,28 +257,28 @@ func TestPNGvsJPEGPSNR(t *testing.T) {
 			maxPSNR: 45.0,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			data1, err := os.ReadFile(tt.file1)
 			if err != nil {
 				t.Fatalf("Failed to read %s: %v", tt.file1, err)
 			}
-			
+
 			data2, err := os.ReadFile(tt.file2)
 			if err != nil {
 				t.Fatalf("Failed to read %s: %v", tt.file2, err)
 			}
-			
-			psnr, err := computePSNR(data1, data2)
+
+			psnr, err := Compute(data1, data2)
 			if err != nil {
 				t.Fatalf("Error computing PSNR: %v", err)
 			}
-			
+
 			t.Logf("%s: PSNR = %.2f dB", tt.name, psnr)
-			
+
 			if psnr < tt.minPSNR || psnr > tt.maxPSNR {
-				t.Errorf("PSNR %.2f dB is outside expected range [%.2f, %.2f]", 
+				t.Errorf("PSNR %.2f dB is outside expected range [%.2f, %.2f]",
 					psnr, tt.minPSNR, tt.maxPSNR)
 			}
 		})
@@ -287,11 +288,11 @@ func TestPNGvsJPEGPSNR(t *testing.T) {
 func TestPNGPalettePSNR(t *testing.T) {
 	// Test PSNR between full-color and palette PNG images
 	tests := []struct {
-		name     string
-		file1    string
-		file2    string
-		minPSNR  float64 // Minimum expected PSNR
-		maxPSNR  float64 // Maximum expected PSNR
+		name    string
+		file1   string
+		file2   string
+		minPSNR float64 // Minimum expected PSNR
+		maxPSNR float64 // Maximum expected PSNR
 	}{
 		{
 			name:    "Full-color vs Plan9 256-color palette",
@@ -315,28 +316,28 @@ func TestPNGPalettePSNR(t *testing.T) {
 			maxPSNR: 35.0,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			data1, err := os.ReadFile(tt.file1)
 			if err != nil {
 				t.Fatalf("Failed to read %s: %v", tt.file1, err)
 			}
-			
+
 			data2, err := os.ReadFile(tt.file2)
 			if err != nil {
 				t.Fatalf("Failed to read %s: %v", tt.file2, err)
 			}
-			
-			psnr, err := computePSNR(data1, data2)
+
+			psnr, err := Compute(data1, data2)
 			if err != nil {
 				t.Fatalf("Error computing PSNR: %v", err)
 			}
-			
+
 			t.Logf("%s: PSNR = %.2f dB", tt.name, psnr)
-			
+
 			if psnr < tt.minPSNR || psnr > tt.maxPSNR {
-				t.Errorf("PSNR %.2f dB is outside expected range [%.2f, %.2f]", 
+				t.Errorf("PSNR %.2f dB is outside expected range [%.2f, %.2f]",
 					psnr, tt.minPSNR, tt.maxPSNR)
 			}
 		})
