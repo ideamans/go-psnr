@@ -55,6 +55,11 @@ var testCases = []testCase{
 		file2: "testdata/palette_websafe.png",
 		name:  "PNG full-color vs web-safe palette",
 	},
+	{
+		file1: "testdata/test_image.png",
+		file2: "testdata/test_image_q95.jpg",
+		name:  "PNG vs JPEG quality 95",
+	},
 }
 
 func TestComputePSNR(t *testing.T) {
@@ -176,6 +181,79 @@ func TestChromaSubsamplingPSNR(t *testing.T) {
 			file2:   "testdata/chroma_420.jpg",
 			minPSNR: 10.0, // Lower due to both compression and subsampling
 			maxPSNR: 20.0,
+		},
+	}
+	
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data1, err := os.ReadFile(tt.file1)
+			if err != nil {
+				t.Fatalf("Failed to read %s: %v", tt.file1, err)
+			}
+			
+			data2, err := os.ReadFile(tt.file2)
+			if err != nil {
+				t.Fatalf("Failed to read %s: %v", tt.file2, err)
+			}
+			
+			psnr, err := computePSNR(data1, data2)
+			if err != nil {
+				t.Fatalf("Error computing PSNR: %v", err)
+			}
+			
+			t.Logf("%s: PSNR = %.2f dB", tt.name, psnr)
+			
+			if psnr < tt.minPSNR || psnr > tt.maxPSNR {
+				t.Errorf("PSNR %.2f dB is outside expected range [%.2f, %.2f]", 
+					psnr, tt.minPSNR, tt.maxPSNR)
+			}
+		})
+	}
+}
+
+func TestPNGvsJPEGPSNR(t *testing.T) {
+	// Test PSNR between PNG and JPEG formats
+	tests := []struct {
+		name     string
+		file1    string
+		file2    string
+		minPSNR  float64 // Minimum expected PSNR
+		maxPSNR  float64 // Maximum expected PSNR
+	}{
+		{
+			name:    "PNG vs JPEG quality 100",
+			file1:   "testdata/test_image.png",
+			file2:   "testdata/test_image_q100.jpg",
+			minPSNR: 40.0, // High quality JPEG should be close to PNG
+			maxPSNR: 55.0,
+		},
+		{
+			name:    "PNG vs JPEG quality 95",
+			file1:   "testdata/test_image.png",
+			file2:   "testdata/test_image_q95.jpg",
+			minPSNR: 35.0,
+			maxPSNR: 50.0,
+		},
+		{
+			name:    "PNG vs JPEG quality 85",
+			file1:   "testdata/test_image.png",
+			file2:   "testdata/test_image_q85.jpg",
+			minPSNR: 30.0,
+			maxPSNR: 45.0,
+		},
+		{
+			name:    "PNG vs JPEG quality 75",
+			file1:   "testdata/test_image.png",
+			file2:   "testdata/test_image_q75.jpg",
+			minPSNR: 25.0,
+			maxPSNR: 40.0,
+		},
+		{
+			name:    "JPEG quality 100 vs JPEG quality 85",
+			file1:   "testdata/test_image_q100.jpg",
+			file2:   "testdata/test_image_q85.jpg",
+			minPSNR: 30.0,
+			maxPSNR: 45.0,
 		},
 	}
 	
